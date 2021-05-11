@@ -1,0 +1,52 @@
+COMPUTER_NAME="<%=instance.hostname%>"
+EMAIL="<%=instance.createdByEmail%>"
+USER_SEARCHPATH1="OU=Employees,OU=Users,OU=Small Locations,OU=Other Countries,DC=ap,DC=uis,DC=unisys,DC=com"
+USER_SEARCHPATH2="OU=Employees,OU=Users,OU=Small Locations,OU=Other Countries,DC=eu,DC=uis,DC=unisys,DC=com"
+USER_SEARCHPATH3="OU=Employees,OU=Users,OU=Home Based,OU=United States,DC=na,DC=uis,DC=unisys,DC=com"
+COMPUTER_SEARCHPATH="OU=Servers,OU=GTCI,OU=Bangalore,OU=India,DC=eu,DC=uis,DC=unisys,DC=com"
+LDAP_SERVER="ldap://eu.uis.unisys.com"
+AD_ACCOUNT="<%=cypher.read('secret/adminusername')%>"
+PASSWD="<%=cypher.read('secret/adminpassword')%>"
+
+## declare an array variable
+declare -a arr=("$USER_SEARCHPATH1" "$USER_SEARCHPATH2" "$USER_SEARCHPATH3")
+
+## now loop through the above array
+for i in "${arr[@]}"; do
+    UPN=$(ldapsearch -H "$LDAP_SERVER" -x -w "$PASSWD" -D "$AD_ACCOUNT" -b "$i" -s sub "(&(objectClass=user)(mail="$EMAIL")(!(userAccountControl:1.2.840.113556.1.4.803:=2)))" -o ldif-wrap=no sn userPrincipalName | grep 'userPrincipalName:')
+    if [ "$UPN" ]; then
+        USER_SEARCHPATH=$i
+        break
+    fi
+done
+
+UPN=$(echo "$UPN" | sed 's/userPrincipalName\: //')
+DN=$(ldapsearch -H "$LDAP_SERVER" -x -w "$PASSWD" -D "$AD_ACCOUNT" -b "$USER_SEARCHPATH" -s sub "(&(objectClass=user)(userPrincipalName="$UPN")(!(userAccountControl:1.2.840.113556.1.4.803:=2)))" -o ldif-wrap=no sn distinguishedName | grep 'dn:')
+DN=$(echo "$DN" | sed 's/dn\: //')
+COMPUTER_DN=$(ldapsearch -H "$LDAP_SERVER" -x -w "$PASSWD" -D "$AD_ACCOUNT" -b "$COMPUTER_SEARCHPATH" -s sub "(&(objectClass=computer)(name="$COMPUTER_NAME"))" -o ldif-wrap=no sn distinguishedName | grep dn)
+COMPUTER_DN=$(echo "$COMPUTER_DN" | sed 's/dn\: //')
+MANAGED_STATUS=$(ldapsearch -H "$LDAP_SERVER" -x -w "$PASSWD" -D "$AD_ACCOUNT" -b "$COMPUTER_SEARCHPATH" -s sub "(&(objectClass=computer)(name="$COMPUTER_NAME"))" -o ldif-wrap=no | grep managedBy)
+MANAGED_STATUS=$(echo "$MANAGED_STATUS" | sed 's/managedBy\: //')
+if [ -z "$MANAGED_STATUS" ]; then
+
+    echo "computer name" $COMPUTER_NAME
+    echo "email" $EMAIL
+    echo "UPN" $UPN
+    echo "DN" $DN
+    echo "COMPUTER_DN" $COMPUTER_DN
+
+    ldapmodify -h eu.uis.unisys.com -p 389 -x -D "$AD_ACCOUNT" -w "$PASSWD" <<EOF
+dn:$COMPUTER_DN
+changetype:modify
+add:managedBy
+managedBy:$DN
+EOF
+else
+    echo "Attribute already set:" $MANAGED_STATUS
+    ldapmodify -h eu.uis.unisys.com -p 389 -x -D "$AD_ACCOUNT" -w "$PASSWD" <<EOF
+dn:$COMPUTER_DN
+changetype:modify
+replace:managedBy
+managedBy:$DN
+EOF
+fi

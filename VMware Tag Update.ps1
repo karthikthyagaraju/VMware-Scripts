@@ -1,0 +1,1 @@
+﻿$file= import-csv -Path "C:\Users\tkarthi1\Desktop\vmcopy.csv"foreach($row in $file){    #echo $row    $vm = Get-VM $row.VMName    Get-VM $vm | New-TagAssignment -Tag $row.Tags   }

@@ -1,0 +1,1 @@
+﻿Register-PSSessionConfiguration -Name Microsoft.PowerShell -confirm:$false

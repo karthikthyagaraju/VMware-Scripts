@@ -1,0 +1,1 @@
+﻿read-host -assecurestring | convertfrom-securestring | Out-File "C:\scripts\Encrypted.txt"
